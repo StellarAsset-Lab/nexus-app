@@ -4,5 +4,18 @@
   "private": true,
   "description": "Generated TypeScript client bindings for the Nexus Registry Soroban contract. Generated via the Stellar CLI; do not hand-edit.",
   "type": "module",
-  "license": "MIT"
+  "license": "MIT",
+  "exports": "./dist/index.js",
+  "typings": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "pnpm run build"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "17.1.0",
+    "buffer": "6.0.3"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
 }
