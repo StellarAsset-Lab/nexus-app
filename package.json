@@ -1,0 +1,25 @@
+{
+  "name": "nexus-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Application layer for Nexus: a standardized integration surface for discovering, qualifying, ordering, settling, verifying, and reconciling Stellar assets.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.21.0",
+    "pnpm": ">=12.4.2"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "lint": "pnpm -r --if-present run lint",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "build": "pnpm -r --if-present run build",
+    "test": "pnpm -r --if-present run test",
+    "bindings": "tsx scripts/generate-bindings.ts",
+    "check-env": "tsx scripts/check-env.ts",
+    "verify-contracts": "tsx scripts/verify-contracts.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2",
+    "typescript": "6.0.3"
+  }
+}

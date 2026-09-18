@@ -1,0 +1,38 @@
+# Node / pnpm
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# TypeScript
+*.tsbuildinfo
+
+# Go
+services/**/bin/
+services/api/api
+services/indexer/indexer
+services/worker/worker
+*.exe
+*.test
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

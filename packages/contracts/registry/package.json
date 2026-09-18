@@ -1,0 +1,8 @@
+{
+  "name": "@nexus/contracts-registry",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Generated TypeScript client bindings for the Nexus Registry Soroban contract. Generated via the Stellar CLI; do not hand-edit.",
+  "type": "module",
+  "license": "MIT"
+}

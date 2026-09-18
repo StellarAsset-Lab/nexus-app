@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "packages/contracts/*"
+allowBuilds:
+  '@reown/appkit': true
+  bufferutil: true
+  esbuild: true
+  secp256k1: true
+  unrs-resolver: true
+  utf-8-validate: true
+minimumReleaseAgeExclude:
+  - lucide-react@1.47.0

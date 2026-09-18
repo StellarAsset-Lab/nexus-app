@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.25-bookworm AS build
+WORKDIR /src
+COPY go.mod ./
+COPY services/api/go.mod ./services/api/
+COPY internal ./internal
+COPY services/api ./services/api
+WORKDIR /src/services/api
+RUN go build -o /out/api ./cmd/api
+
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+COPY --from=build /out/api /usr/local/bin/api
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/api"]
