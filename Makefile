@@ -46,7 +46,7 @@ check: lint test build
 
 clean:
 	rm -rf apps/web/.next packages/*/dist services/*/bin
-	find . -name '*.tsbuildinfo' -delete
+	find . -name node_modules -prune -o -name '*.tsbuildinfo' -print -delete
 
 bindings:
 	pnpm bindings
