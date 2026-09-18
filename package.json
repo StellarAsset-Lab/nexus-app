@@ -19,7 +19,10 @@
     "verify-contracts": "tsx scripts/verify-contracts.ts"
   },
   "devDependencies": {
+    "@nexus/sdk": "workspace:*",
+    "dotenv": "18.0.0",
     "tsx": "4.19.2",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "zod": "4.6.5"
   }
 }

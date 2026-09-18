@@ -11,3 +11,4 @@ allowBuilds:
   utf-8-validate: true
 minimumReleaseAgeExclude:
   - lucide-react@1.47.0
+  - dotenv@18.0.0

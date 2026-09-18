@@ -9,5 +9,16 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "pnpm run build"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "17.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
   }
 }

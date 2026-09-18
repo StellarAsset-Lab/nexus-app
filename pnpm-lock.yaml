@@ -166,12 +166,21 @@ importers:
 
   .:
     devDependencies:
+      '@nexus/sdk':
+        specifier: workspace:*
+        version: link:packages/sdk
+      dotenv:
+        specifier: 18.0.0
+        version: 18.0.0
       tsx:
         specifier: 4.19.2
         version: 4.19.2
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   apps/web:
     dependencies:
@@ -247,7 +256,18 @@ importers:
 
   packages/contracts/registry: {}
 
-  packages/sdk: {}
+  packages/sdk:
+    dependencies:
+      '@stellar/stellar-sdk':
+        specifier: 17.1.0
+        version: 17.1.0(debug@4.4.3)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/ui:
     dependencies:
@@ -2447,6 +2467,11 @@ packages:
   doctrine@2.1.0:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
     engines: {node: '>=0.10.0'}
+
+  dotenv@18.0.0:
+    resolution: {integrity: sha512-16YSUvsKtKbwrTbESvtTSZzzJUug6jdFdqiBFg9Q6Bk1JY9r0hAtrtTiWxdI9YrsgOTmkjZRdgU0n3LnwGpECw==}
+    engines: {node: '>=12'}
+    hasBin: true
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -7288,6 +7313,8 @@ snapshots:
   doctrine@2.1.0:
     dependencies:
       esutils: 2.0.3
+
+  dotenv@18.0.0: {}
 
   dunder-proto@1.0.1:
     dependencies:
