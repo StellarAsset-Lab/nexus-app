@@ -10,12 +10,12 @@ This repository is under active initial development. Contract IDs are not yet de
 
 ## Stack
 
-- Node.js `24.21.0`, pnpm `12.4.2`, Go `1.25.1` locally (target runtime `1.27.1`, see note below), PostgreSQL `18.6`
+- Node.js `24.21.0`, pnpm `12.4.2`, Go `1.27.1`, PostgreSQL `18.6`
 - Next.js `16.3.5`, React `19.2.8`, TypeScript `6.0.3`, Tailwind CSS `4.3.3`
 - `@stellar/stellar-sdk` `17.1.0`, `@creit.tech/stellar-wallets-kit` `2.6.0`
 - `github.com/stellar/go-stellar-sdk` `v0.7.2`
 
-> **Go version note:** the project specification pins Go `1.27.1`. The `go.mod`/`go.work` files in this repository currently target `1.25.1` to match the toolchain available in this development environment. Update the `go` directive to `1.27.1` once that toolchain is available, per `docs/local-development.md`.
+> **Go toolchain:** every `go.mod`/`go.work` in this repository declares `go 1.27.1` with an explicit `toolchain go1.27.1` directive. A locally installed Go command older than `1.27.1` will automatically download and use the `go1.27.1` toolchain per [Go's toolchain management](https://go.dev/doc/toolchain) (`GOTOOLCHAIN=auto`, the default) — no manual Go upgrade is required, and CI/Docker images should use `1.27.1` directly.
 
 ## Repository layout
 
