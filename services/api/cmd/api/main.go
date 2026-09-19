@@ -3,11 +3,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/StellarAsset-Lab/nexus-app/internal/db"
+	"github.com/StellarAsset-Lab/nexus-app/internal/httpapi"
+	"github.com/StellarAsset-Lab/nexus-app/internal/network"
 )
 
 func main() {
@@ -21,7 +28,64 @@ func main() {
 		return
 	}
 
-	logger.Info("nexus api scaffold initialized")
+	if err := run(logger); err != nil {
+		logger.Error("api exited with error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(logger *slog.Logger) error {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		return errors.New("DATABASE_URL is not set")
+	}
+
+	bindAddr := os.Getenv("API_BIND_ADDR")
+	if bindAddr == "" {
+		bindAddr = ":8080"
+	}
+
+	netConfig, err := network.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	conn, err := db.Open(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	server := httpapi.NewServer(logger, conn, netConfig)
+
+	httpServer := &http.Server{
+		Addr:              bindAddr,
+		Handler:           server.Routes(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	serveErr := make(chan error, 1)
+	go func() {
+		logger.Info("api listening", "addr", bindAddr, "network", netConfig.Name)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+			return
+		}
+		serveErr <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		logger.Info("shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
+	case err := <-serveErr:
+		return err
+	}
 }
 
 func runMigrations(logger *slog.Logger) {
