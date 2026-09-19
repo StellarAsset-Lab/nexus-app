@@ -9,7 +9,10 @@ export const metadata: Metadata = {
   description: "Discover, qualify, order, settle, verify, and reconcile Stellar assets through a standardized integration surface.",
 };
 
-const NAV_ITEMS: readonly NavItem[] = [{ href: "/", label: "Home" }];
+const NAV_ITEMS: readonly NavItem[] = [
+  { href: "/", label: "Home" },
+  { href: "/assets", label: "Assets" },
+];
 
 const FOOTER_LINKS = [
   { href: "https://github.com/StellarAsset-Lab/nexus-app", label: "GitHub" },
