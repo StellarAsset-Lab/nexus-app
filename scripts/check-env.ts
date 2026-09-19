@@ -36,7 +36,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().regex(/^postgres(?:ql)?:\/\//, 'must be a "postgres://" connection string'),
   API_BIND_ADDR: z.string().regex(/^([^:]+)?:\d+$/, 'must look like ":8080" or "host:8080"'),
   INDEXER_BIND_ADDR: z.string().regex(/^([^:]+)?:\d+$/, 'must look like ":8081" or "host:8081"'),
-  WORKER_HEARTBEAT_INTERVAL: z.string().regex(/^\d+(ms|s|m|h)$/, 'must be a Go duration, e.g. "30s"'),
+  WORKER_RECONCILE_INTERVAL: z.string().regex(/^\d+$/, "must be a positive integer number of seconds"),
   INDEXER_START_LEDGER: z.string().min(1),
   INDEXER_BATCH_LIMIT: z.string().regex(/^\d+$/, "must be a positive integer"),
   INDEXER_CONFIRMATION_LOOKBACK: z.string().regex(/^\d+$/, "must be a positive integer"),
