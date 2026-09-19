@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "2.6.0",
+    "cobe": "2.0.1",
     "@nexus/contracts-order": "workspace:*",
     "@nexus/contracts-registry": "workspace:*",
     "@nexus/sdk": "workspace:*",
