@@ -203,6 +203,90 @@ func GetOrder(ctx context.Context, q dbtx, orderID int64) (*model.Order, error) 
 	return &o, nil
 }
 
+// PendingReconciliationHashes returns transaction hashes seen in
+// stellar_events that either have no row in transactions yet, or whose
+// transactions row is still non-terminal ("Pending") — the set the worker
+// needs to (re-)check against RPC. Bounded by limit so one reconciliation
+// pass never tries to process an unbounded backlog at once.
+func PendingReconciliationHashes(ctx context.Context, q dbtx, limit int) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT DISTINCT se.transaction_hash
+		FROM stellar_events se
+		LEFT JOIN transactions t ON t.transaction_hash = se.transaction_hash
+		WHERE t.transaction_hash IS NULL OR t.status = 'Pending'
+		ORDER BY se.transaction_hash
+		LIMIT $1`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("pending reconciliation hashes: %w", err)
+	}
+	defer rows.Close()
+
+	var hashes []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, fmt.Errorf("scan transaction hash: %w", err)
+		}
+		hashes = append(hashes, h)
+	}
+	return hashes, rows.Err()
+}
+
+// TransactionContext returns the contract id of the (deterministically)
+// first event observed for hash, and the order id it relates to, if any.
+// Both may be zero-valued when hash has no matching stellar_events row.
+func TransactionContext(ctx context.Context, q dbtx, hash string) (contractID *string, orderID *int64, err error) {
+	row := q.QueryRowContext(ctx, `
+		SELECT se.contract_id, oe.order_id
+		FROM stellar_events se
+		LEFT JOIN order_events oe ON oe.transaction_hash = se.transaction_hash
+		WHERE se.transaction_hash = $1
+		ORDER BY se.ledger ASC, se.event_id ASC
+		LIMIT 1`,
+		hash,
+	)
+	var contract sql.NullString
+	var order sql.NullInt64
+	if scanErr := row.Scan(&contract, &order); scanErr != nil {
+		if errors.Is(scanErr, sql.ErrNoRows) {
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("scan transaction context: %w", scanErr)
+	}
+	if contract.Valid {
+		contractID = &contract.String
+	}
+	if order.Valid {
+		orderID = &order.Int64
+	}
+	return contractID, orderID, nil
+}
+
+// UpsertTransaction records the worker's reconciled observation of a
+// transaction's status. FirstObservedAt is only set on first insert;
+// LastObservedAt always advances to now().
+func UpsertTransaction(ctx context.Context, q dbtx, t model.Transaction) error {
+	_, err := q.ExecContext(ctx, `
+		INSERT INTO transactions (
+			transaction_hash, ledger, status, first_observed_at, last_observed_at,
+			source_contract, order_id
+		) VALUES ($1, $2, $3, now(), now(), $4, $5)
+		ON CONFLICT (transaction_hash) DO UPDATE SET
+			ledger = EXCLUDED.ledger,
+			status = EXCLUDED.status,
+			last_observed_at = now(),
+			source_contract = COALESCE(EXCLUDED.source_contract, transactions.source_contract),
+			order_id = COALESCE(EXCLUDED.order_id, transactions.order_id)`,
+		t.TransactionHash, t.Ledger, t.Status, t.SourceContract, t.OrderID,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert transaction: %w", err)
+	}
+	return nil
+}
+
 // GetTransaction returns the transaction, or nil if it has never been
 // observed.
 func GetTransaction(ctx context.Context, q dbtx, hash string) (*model.Transaction, error) {
