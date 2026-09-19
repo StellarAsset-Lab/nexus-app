@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* @nexus/ui lives outside this app's directory tree (a sibling workspace
+   package), so Tailwind's automatic content detection won't find its class
+   names on its own — register it explicitly. */
+@source "../../../../packages/ui/src";
+
 :root {
   --color-background: #ffffff;
   --color-foreground: #0a1120;
