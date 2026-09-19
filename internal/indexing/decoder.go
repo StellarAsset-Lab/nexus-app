@@ -9,15 +9,6 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// projectionFailure distinguishes a real infrastructure/database error
-// (which must abort and retry the whole batch transaction) from an event
-// decode failure (which is recorded per-event via decode_error and must not
-// block the rest of the batch — see spec §16.3).
-type projectionFailure struct{ err error }
-
-func (p *projectionFailure) Error() string { return p.err.Error() }
-func (p *projectionFailure) Unwrap() error { return p.err }
-
 func decodeTopicsXDR(topicXDR []string) ([]xdr.ScVal, error) {
 	topics := make([]xdr.ScVal, 0, len(topicXDR))
 	for _, t := range topicXDR {
@@ -41,15 +32,28 @@ func decodeValueXDR(valueXDR string) (xdr.ScVal, error) {
 	return v, nil
 }
 
-// decodeAndProjectEvent decodes one raw event and applies its projection
-// update within tx, dispatching by which configured contract emitted it.
-// Returns (nil, nil) for events from contracts this indexer isn't
-// configured to decode (e.g. Order events before commit 16 adds Order
-// decoding). A plain returned error means decoding failed (caller records
-// decode_error and continues); a *projectionFailure means a real database
-// error occurred applying the projection (caller must abort the batch).
-func decodeAndProjectEvent(ctx context.Context, tx *sql.Tx, event protocol.EventInfo, registryContractID string) (map[string]any, error) {
-	if registryContractID == "" || event.ContractID != registryContractID {
+// decodedEvent is a successfully decoded event, not yet projected.
+type decodedEvent struct {
+	name       string
+	payload    map[string]any
+	isRegistry bool
+}
+
+// decodeEvent decodes one raw event's topics/value, dispatching by which
+// configured contract emitted it. This is pure decoding with no database
+// access — callers must persist the raw stellar_events row before calling
+// projectEvent, since order_events has a foreign key on stellar_events
+// (event_id) that a projection insert would otherwise violate.
+//
+// Returns (nil, nil) for events from a contract this indexer isn't
+// configured to decode. A non-nil error means decoding failed — the caller
+// should record it as decode_error and continue with the rest of the batch,
+// per spec §16.3 (never discard the raw event, never let one bad event
+// abort the batch).
+func decodeEvent(event protocol.EventInfo, registryContractID, orderContractID string) (*decodedEvent, error) {
+	isRegistry := registryContractID != "" && event.ContractID == registryContractID
+	isOrder := orderContractID != "" && event.ContractID == orderContractID
+	if !isRegistry && !isOrder {
 		return nil, nil
 	}
 
@@ -71,14 +75,31 @@ func decodeAndProjectEvent(ctx context.Context, tx *sql.Tx, event protocol.Event
 		return nil, err
 	}
 
-	payload, err := DecodeRegistryEvent(eventName, topics, value)
+	var payload map[string]any
+	if isRegistry {
+		payload, err = DecodeRegistryEvent(eventName, topics, value)
+	} else {
+		payload, err = DecodeOrderEvent(eventName, topics, value)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ProjectRegistryEvent(ctx, tx, eventName, payload, int64(event.Ledger)); err != nil {
-		return nil, &projectionFailure{err: fmt.Errorf("project %s: %w", eventName, err)}
-	}
+	return &decodedEvent{name: eventName, payload: payload, isRegistry: isRegistry}, nil
+}
 
-	return payload, nil
+// projectEvent applies a successfully decoded event's projection update.
+// Must only be called after the corresponding stellar_events row has been
+// inserted in the same transaction (see decodeEvent's doc comment).
+func projectEvent(ctx context.Context, tx *sql.Tx, decoded *decodedEvent, event protocol.EventInfo) error {
+	if decoded.isRegistry {
+		if err := ProjectRegistryEvent(ctx, tx, decoded.name, decoded.payload, int64(event.Ledger)); err != nil {
+			return fmt.Errorf("project %s: %w", decoded.name, err)
+		}
+		return nil
+	}
+	if err := ProjectOrderEvent(ctx, tx, decoded.name, decoded.payload, int64(event.Ledger), event.TransactionHash, event.ID); err != nil {
+		return fmt.Errorf("project %s: %w", decoded.name, err)
+	}
+	return nil
 }

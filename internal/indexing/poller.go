@@ -138,7 +138,7 @@ func (p *Poller) pollOnce(ctx context.Context) (caughtUp bool, err error) {
 		return false, fmt.Errorf("get events: %w", err)
 	}
 
-	if err := persistEventBatch(ctx, p.db, p.cfg.NetworkName, resp, p.cfg.BatchLimit, p.cfg.RegistryContractID); err != nil {
+	if err := persistEventBatch(ctx, p.db, p.cfg.NetworkName, resp, p.cfg.BatchLimit, p.cfg.RegistryContractID, p.cfg.OrderContractID); err != nil {
 		return false, fmt.Errorf("persist event batch: %w", err)
 	}
 
@@ -159,7 +159,7 @@ func (p *Poller) pollOnce(ctx context.Context) (caughtUp bool, err error) {
 // of an overlapping confirmation-lookback window idempotent.
 func persistEventBatch(
 	ctx context.Context, conn *sql.DB, networkName string, resp protocol.GetEventsResponse,
-	batchLimit uint, registryContractID string,
+	batchLimit uint, registryContractID, orderContractID string,
 ) error {
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -181,18 +181,17 @@ func persistEventBatch(
 			ledgerClosedAt = time.Unix(0, 0).UTC()
 		}
 
-		decodedPayload, decodeErr := decodeAndProjectEvent(ctx, tx, event, registryContractID)
-
-		var pf *projectionFailure
-		if errors.As(decodeErr, &pf) {
-			return fmt.Errorf("project event %s: %w", event.ID, pf.err)
-		}
+		// Decode first (pure, no DB access), then persist the raw row, then
+		// project — order_events has a foreign key on stellar_events, so
+		// the raw row must exist before any projection insert references
+		// it. See decodeEvent's doc comment.
+		decoded, decodeErr := decodeEvent(event, registryContractID, orderContractID)
 
 		var decodedPayloadJSON, decodeErrText any
 		if decodeErr != nil {
 			decodeErrText = decodeErr.Error()
-		} else if decodedPayload != nil {
-			payloadBytes, err := marshalPayload(decodedPayload)
+		} else if decoded != nil {
+			payloadBytes, err := marshalPayload(decoded.payload)
 			if err != nil {
 				return fmt.Errorf("marshal decoded payload for event %s: %w", event.ID, err)
 			}
@@ -212,6 +211,12 @@ func persistEventBatch(
 		)
 		if err != nil {
 			return fmt.Errorf("insert event %s: %w", event.ID, err)
+		}
+
+		if decodeErr == nil && decoded != nil {
+			if err := projectEvent(ctx, tx, decoded, event); err != nil {
+				return fmt.Errorf("project event %s: %w", event.ID, err)
+			}
 		}
 	}
 
