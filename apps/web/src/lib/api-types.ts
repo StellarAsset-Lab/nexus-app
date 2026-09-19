@@ -46,6 +46,11 @@ export interface ListOrdersResponse {
   readonly nextCursor?: string;
 }
 
+export interface ListTransactionsResponse {
+  readonly transactions: readonly TransactionResponse[];
+  readonly nextCursor?: string;
+}
+
 export interface TransactionResponse {
   readonly transactionHash: string;
   readonly ledger?: number;

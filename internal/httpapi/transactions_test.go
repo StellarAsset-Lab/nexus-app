@@ -86,6 +86,47 @@ func TestIntegrationTransactionEndpoints(t *testing.T) {
 			t.Fatalf("expected TRANSACTION_NOT_FOUND, got %q", body.Error.Code)
 		}
 	})
+
+	t.Run("list transactions includes the seeded transaction", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/api/v1/transactions?limit=200")
+		if err != nil {
+			t.Fatalf("GET transactions: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+		var body listTransactionsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		found := false
+		for _, tx := range body.Transactions {
+			if tx.TransactionHash == hash {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected %s in the transaction list", hash)
+		}
+	})
+
+	t.Run("list transactions status filter", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/api/v1/transactions?status=Confirmed&limit=200")
+		if err != nil {
+			t.Fatalf("GET transactions: %v", err)
+		}
+		defer resp.Body.Close()
+		var body listTransactionsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		for _, tx := range body.Transactions {
+			if tx.Status != "Confirmed" {
+				t.Fatalf("status=Confirmed filter returned transaction with status %q", tx.Status)
+			}
+		}
+	})
 }
 
 func TestIntegrationEventEndpoints(t *testing.T) {
@@ -184,6 +225,24 @@ func TestIntegrationEventEndpoints(t *testing.T) {
 			if e.ContractID == contractID && e.EventType != "AssetListed" {
 				t.Fatalf("eventType filter returned event with type %q", e.EventType)
 			}
+		}
+	})
+
+	t.Run("transaction hash filter returns only that transaction's events", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/api/v1/events?transactionHash=txevent0&limit=200")
+		if err != nil {
+			t.Fatalf("GET events: %v", err)
+		}
+		defer resp.Body.Close()
+		var body listEventsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(body.Events) != 1 {
+			t.Fatalf("expected exactly 1 event for transactionHash=txevent0, got %d", len(body.Events))
+		}
+		if body.Events[0].TransactionHash != "txevent0" {
+			t.Fatalf("expected transactionHash=txevent0, got %s", body.Events[0].TransactionHash)
 		}
 	})
 }

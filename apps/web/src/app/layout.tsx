@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/assets", label: "Assets" },
+  { href: "/transactions", label: "Transactions" },
 ];
 
 const FOOTER_LINKS = [

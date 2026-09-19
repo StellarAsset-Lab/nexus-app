@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/StellarAsset-Lab/nexus-app/internal/model"
 )
@@ -203,6 +204,54 @@ func GetOrder(ctx context.Context, q dbtx, orderID int64) (*model.Order, error) 
 	return &o, nil
 }
 
+// TransactionFilter narrows ListTransactions. A nil Status means "no
+// filter" — every observed status is included.
+type TransactionFilter struct {
+	Status *string
+	// Cursor is the (last_observed_at, transaction_hash) pair of the last
+	// row seen on the previous page — matches the
+	// (last_observed_at DESC, transaction_hash DESC) ordering, per spec §30
+	// deterministic keyset pagination.
+	CursorObservedAt *time.Time
+	CursorHash       *string
+	Limit            int
+}
+
+// ListTransactions returns up to filter.Limit+1 transactions ordered by
+// last_observed_at descending (most recently reconciled first); the caller
+// uses the extra row (if present) to determine whether there is a next
+// page, then drops it.
+func ListTransactions(ctx context.Context, q dbtx, filter TransactionFilter) ([]model.Transaction, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT transaction_hash, ledger, status, first_observed_at, last_observed_at,
+		       source_contract, order_id
+		FROM transactions
+		WHERE ($1::text IS NULL OR status = $1)
+		  AND ($2::timestamptz IS NULL OR $3::text IS NULL
+		       OR (last_observed_at, transaction_hash) < ($2, $3))
+		ORDER BY last_observed_at DESC, transaction_hash DESC
+		LIMIT $4`,
+		filter.Status, filter.CursorObservedAt, filter.CursorHash, filter.Limit+1,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var txs []model.Transaction
+	for rows.Next() {
+		var t model.Transaction
+		if err := rows.Scan(
+			&t.TransactionHash, &t.Ledger, &t.Status, &t.FirstObservedAt, &t.LastObservedAt,
+			&t.SourceContract, &t.OrderID,
+		); err != nil {
+			return nil, fmt.Errorf("scan transaction: %w", err)
+		}
+		txs = append(txs, t)
+	}
+	return txs, rows.Err()
+}
+
 // PendingReconciliationHashes returns transaction hashes seen in
 // stellar_events that either have no row in transactions yet, or whose
 // transactions row is still non-terminal ("Pending") — the set the worker
@@ -311,8 +360,9 @@ func GetTransaction(ctx context.Context, q dbtx, hash string) (*model.Transactio
 // EventFilter narrows ListEvents. Every field is optional (nil/empty means
 // "no filter").
 type EventFilter struct {
-	EventType  *string
-	ContractID *string
+	EventType       *string
+	ContractID      *string
+	TransactionHash *string
 	// Cursor is the (ledger, event_id) pair of the last row seen on the
 	// previous page — matches the (ledger, event_id) ordering used
 	// throughout for deterministic keyset pagination (spec §30).
@@ -332,11 +382,12 @@ func ListEvents(ctx context.Context, q dbtx, filter EventFilter) ([]model.Stella
 		FROM stellar_events
 		WHERE ($1::text IS NULL OR event_type = $1)
 		  AND ($2::text IS NULL OR contract_id = $2)
-		  AND ($3::bigint IS NULL OR $4::text IS NULL
-		       OR (ledger, event_id) > ($3, $4))
+		  AND ($3::text IS NULL OR transaction_hash = $3)
+		  AND ($4::bigint IS NULL OR $5::text IS NULL
+		       OR (ledger, event_id) > ($4, $5))
 		ORDER BY ledger ASC, event_id ASC
-		LIMIT $5`,
-		filter.EventType, filter.ContractID,
+		LIMIT $6`,
+		filter.EventType, filter.ContractID, filter.TransactionHash,
 		filter.CursorLedger, filter.CursorEventID,
 		filter.Limit+1,
 	)

@@ -15,6 +15,19 @@ export function orderStatusTone(status: OrderStatus): StatusTone {
   }
 }
 
+export function transactionStatusTone(status: string): StatusTone {
+  switch (status) {
+    case "Confirmed":
+      return "positive";
+    case "Pending":
+      return "pending";
+    case "Failed":
+      return "negative";
+    default:
+      return "unknown";
+  }
+}
+
 export function componentHealthTone(status: ComponentHealth): StatusTone {
   switch (status) {
     case "Operational":

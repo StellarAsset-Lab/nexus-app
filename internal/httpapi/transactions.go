@@ -28,6 +28,80 @@ func toTransactionResponse(t model.Transaction) transactionResponse {
 	}
 }
 
+type listTransactionsResponse struct {
+	Transactions []transactionResponse `json:"transactions"`
+	NextCursor   *string               `json:"nextCursor,omitempty"`
+}
+
+func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) {
+	limit := parseLimit(r)
+
+	filter := nexusdb.TransactionFilter{
+		Status: parseStringFilter(r, "status"),
+		Limit:  limit,
+	}
+	if raw := r.URL.Query().Get("cursor"); raw != "" {
+		observedAt, hash, ok := decodeTransactionCursor(raw)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "INVALID_CURSOR", "The cursor parameter is malformed.")
+			return
+		}
+		filter.CursorObservedAt = &observedAt
+		filter.CursorHash = &hash
+	}
+
+	txs, err := nexusdb.ListTransactions(r.Context(), s.db, filter)
+	if err != nil {
+		s.logger.Error("list transactions failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not list transactions.")
+		return
+	}
+
+	hasMore := len(txs) > limit
+	if hasMore {
+		txs = txs[:limit]
+	}
+	resp := listTransactionsResponse{Transactions: make([]transactionResponse, 0, len(txs))}
+	for _, t := range txs {
+		resp.Transactions = append(resp.Transactions, toTransactionResponse(t))
+	}
+	if hasMore && len(txs) > 0 {
+		last := txs[len(txs)-1]
+		cursor := encodeTransactionCursor(last.LastObservedAt, last.TransactionHash)
+		resp.NextCursor = &cursor
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// encodeTransactionCursor/decodeTransactionCursor represent the composite
+// (last_observed_at, transaction_hash) keyset cursor as an RFC 3339
+// timestamp, ":", then the hash — a transaction hash never contains ":".
+func encodeTransactionCursor(observedAt time.Time, hash string) string {
+	return observedAt.Format(time.RFC3339Nano) + ":" + hash
+}
+
+// The RFC3339Nano timestamp itself contains colons (HH:MM:SS), so the split
+// point is the LAST ':' in the cursor — transaction hashes are hex-only and
+// never contain one.
+func decodeTransactionCursor(raw string) (observedAt time.Time, hash string, ok bool) {
+	lastColon := -1
+	for i := len(raw) - 1; i >= 0; i-- {
+		if raw[i] == ':' {
+			lastColon = i
+			break
+		}
+	}
+	if lastColon <= 0 || lastColon+1 >= len(raw) {
+		return time.Time{}, "", false
+	}
+	t, err := time.Parse(time.RFC3339Nano, raw[:lastColon])
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	return t, raw[lastColon+1:], true
+}
+
 func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 	hash := r.PathValue("hash")
 
@@ -82,9 +156,10 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 
 	filter := nexusdb.EventFilter{
-		EventType:  parseStringFilter(r, "eventType"),
-		ContractID: parseStringFilter(r, "contractId"),
-		Limit:      limit,
+		EventType:       parseStringFilter(r, "eventType"),
+		ContractID:      parseStringFilter(r, "contractId"),
+		TransactionHash: parseStringFilter(r, "transactionHash"),
+		Limit:           limit,
 	}
 	if raw := r.URL.Query().Get("cursor"); raw != "" {
 		ledger, eventID, ok := decodeEventCursor(raw)
