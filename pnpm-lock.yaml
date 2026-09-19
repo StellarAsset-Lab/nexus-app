@@ -252,7 +252,18 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
-  packages/contracts/order: {}
+  packages/contracts/order:
+    dependencies:
+      '@stellar/stellar-sdk':
+        specifier: 17.1.0
+        version: 17.1.0(debug@4.4.3)
+      buffer:
+        specifier: 6.0.3
+        version: 6.0.3
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/contracts/registry:
     dependencies:
