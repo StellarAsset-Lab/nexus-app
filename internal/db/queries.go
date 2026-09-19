@@ -130,6 +130,79 @@ func ListOrdersByAsset(ctx context.Context, q dbtx, asset string, limit int) ([]
 	return scanOrders(rows)
 }
 
+// OrderFilter narrows ListOrders. Every field is optional (nil/empty means
+// "no filter") — callers combine only the filters they need.
+type OrderFilter struct {
+	Status        *string
+	Asset         *string
+	Distributor   *string
+	Buyer         *string
+	CreatedAfter  *int64 // inclusive, in created_at_ledger terms
+	CreatedBefore *int64 // inclusive, in created_at_ledger terms
+	// Cursor is the (created_at_ledger, order_id) pair of the last row seen
+	// on the previous page — matches the composite
+	// (created_at_ledger DESC, order_id DESC) ordering used throughout, per
+	// spec §30 deterministic keyset pagination.
+	CursorLedger  *int64
+	CursorOrderID *int64
+	Limit         int
+}
+
+// ListOrders returns up to filter.Limit+1 orders ordered by
+// (created_at_ledger DESC, order_id DESC); the caller uses the extra row (if
+// present) to determine whether there is a next page, then drops it.
+func ListOrders(ctx context.Context, q dbtx, filter OrderFilter) ([]model.Order, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT order_id, buyer, distributor, asset, payment_asset, asset_amount, payment_amount,
+		       created_at_ledger, expires_at_ledger, status, payment_funded, asset_funded,
+		       created_transaction_hash, last_transaction_hash, last_updated_ledger
+		FROM orders
+		WHERE ($1::text IS NULL OR status = $1)
+		  AND ($2::text IS NULL OR asset = $2)
+		  AND ($3::text IS NULL OR distributor = $3)
+		  AND ($4::text IS NULL OR buyer = $4)
+		  AND ($5::bigint IS NULL OR created_at_ledger >= $5)
+		  AND ($6::bigint IS NULL OR created_at_ledger <= $6)
+		  AND ($7::bigint IS NULL OR $8::bigint IS NULL
+		       OR (created_at_ledger, order_id) < ($7, $8))
+		ORDER BY created_at_ledger DESC, order_id DESC
+		LIMIT $9`,
+		filter.Status, filter.Asset, filter.Distributor, filter.Buyer,
+		filter.CreatedAfter, filter.CreatedBefore,
+		filter.CursorLedger, filter.CursorOrderID,
+		filter.Limit+1,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list orders: %w", err)
+	}
+	defer rows.Close()
+
+	return scanOrders(rows)
+}
+
+// GetOrder returns the order, or nil if it has never been indexed.
+func GetOrder(ctx context.Context, q dbtx, orderID int64) (*model.Order, error) {
+	row := q.QueryRowContext(ctx, `
+		SELECT order_id, buyer, distributor, asset, payment_asset, asset_amount, payment_amount,
+		       created_at_ledger, expires_at_ledger, status, payment_funded, asset_funded,
+		       created_transaction_hash, last_transaction_hash, last_updated_ledger
+		FROM orders WHERE order_id = $1`, orderID)
+
+	var o model.Order
+	if err := row.Scan(
+		&o.OrderID, &o.Buyer, &o.Distributor, &o.Asset, &o.PaymentAsset,
+		&o.AssetAmount, &o.PaymentAmount, &o.CreatedAtLedger, &o.ExpiresAtLedger,
+		&o.Status, &o.PaymentFunded, &o.AssetFunded,
+		&o.CreatedTransactionHash, &o.LastTransactionHash, &o.LastUpdatedLedger,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan order: %w", err)
+	}
+	return &o, nil
+}
+
 // scanOrders scans every remaining row of rows into model.Order values,
 // matching the exact column order used by ListOrdersByAsset and the order
 // list/detail queries added alongside the order API.

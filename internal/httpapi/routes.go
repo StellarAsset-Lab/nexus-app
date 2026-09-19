@@ -14,6 +14,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/assets", s.handleListAssets)
 	mux.HandleFunc("GET /api/v1/assets/{asset}", s.handleGetAsset)
 	mux.HandleFunc("GET /api/v1/assets/{asset}/activity", s.handleAssetActivity)
+	mux.HandleFunc("GET /api/v1/orders", s.handleListOrders)
+	mux.HandleFunc("GET /api/v1/orders/{id}", s.handleGetOrder)
 
 	return withRecovery(s.logger, withLogging(s.logger, mux))
 }
