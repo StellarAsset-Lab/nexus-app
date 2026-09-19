@@ -13,6 +13,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/assets", label: "Assets" },
   { href: "/transactions", label: "Transactions" },
+  { href: "/status", label: "Status" },
 ];
 
 const FOOTER_LINKS = [
