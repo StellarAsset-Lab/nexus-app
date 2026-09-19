@@ -14,6 +14,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { href: "/assets", label: "Assets" },
   { href: "/transactions", label: "Transactions" },
   { href: "/sandbox", label: "Sandbox" },
+  { href: "/developers", label: "Developers" },
   { href: "/status", label: "Status" },
   { href: "/operations", label: "Operations" },
 ];
