@@ -6,3 +6,4 @@ export * from "./client";
 export * from "./validation";
 export * from "./registry";
 export * from "./orders";
+export * from "./transactions";
