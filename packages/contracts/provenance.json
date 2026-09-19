@@ -1,0 +1,17 @@
+{
+  "sourceRepository": "https://github.com/StellarAsset-Lab/nexus-contract",
+  "contracts": {
+    "registry": {
+      "wasmFile": "nexus_registry.wasm",
+      "sha256": "c7087176b36614100712f43f66267c6192fe64f5dd371f84dc299c5f65517f54",
+      "sourceCommit": "450de6254352aca5bbd4ddeb4767b27f5da49225",
+      "outputDir": "packages/contracts/registry"
+    },
+    "order": {
+      "wasmFile": "nexus_order.wasm",
+      "sha256": "0cd0503967aa73d556e93602ba8af3dcdc12509bee55dd360abd86e9674731e9",
+      "sourceCommit": "d36c1f4d615a27b0963ef59e353c8898b593a719",
+      "outputDir": "packages/contracts/order"
+    }
+  }
+}
