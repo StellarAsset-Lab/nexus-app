@@ -280,6 +280,12 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@nexus/contracts-order':
+        specifier: workspace:*
+        version: link:../contracts/order
+      '@nexus/contracts-registry':
+        specifier: workspace:*
+        version: link:../contracts/registry
       '@stellar/stellar-sdk':
         specifier: 17.1.0
         version: 17.1.0(debug@4.4.3)
