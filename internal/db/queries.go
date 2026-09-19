@@ -203,6 +203,79 @@ func GetOrder(ctx context.Context, q dbtx, orderID int64) (*model.Order, error) 
 	return &o, nil
 }
 
+// GetTransaction returns the transaction, or nil if it has never been
+// observed.
+func GetTransaction(ctx context.Context, q dbtx, hash string) (*model.Transaction, error) {
+	row := q.QueryRowContext(ctx, `
+		SELECT transaction_hash, ledger, status, first_observed_at, last_observed_at,
+		       source_contract, order_id
+		FROM transactions WHERE transaction_hash = $1`, hash)
+
+	var t model.Transaction
+	if err := row.Scan(
+		&t.TransactionHash, &t.Ledger, &t.Status, &t.FirstObservedAt, &t.LastObservedAt,
+		&t.SourceContract, &t.OrderID,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan transaction: %w", err)
+	}
+	return &t, nil
+}
+
+// EventFilter narrows ListEvents. Every field is optional (nil/empty means
+// "no filter").
+type EventFilter struct {
+	EventType  *string
+	ContractID *string
+	// Cursor is the (ledger, event_id) pair of the last row seen on the
+	// previous page — matches the (ledger, event_id) ordering used
+	// throughout for deterministic keyset pagination (spec §30).
+	CursorLedger  *int64
+	CursorEventID *string
+	Limit         int
+}
+
+// ListEvents returns up to filter.Limit+1 events ordered by (ledger ASC,
+// event_id ASC); the caller uses the extra row (if present) to determine
+// whether there is a next page, then drops it.
+func ListEvents(ctx context.Context, q dbtx, filter EventFilter) ([]model.StellarEvent, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT event_id, ledger, ledger_closed_at, transaction_hash, transaction_index,
+		       operation_index, event_type, contract_id, topics_xdr, value_xdr,
+		       decoded_payload, decode_error, first_observed_at
+		FROM stellar_events
+		WHERE ($1::text IS NULL OR event_type = $1)
+		  AND ($2::text IS NULL OR contract_id = $2)
+		  AND ($3::bigint IS NULL OR $4::text IS NULL
+		       OR (ledger, event_id) > ($3, $4))
+		ORDER BY ledger ASC, event_id ASC
+		LIMIT $5`,
+		filter.EventType, filter.ContractID,
+		filter.CursorLedger, filter.CursorEventID,
+		filter.Limit+1,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []model.StellarEvent
+	for rows.Next() {
+		var e model.StellarEvent
+		if err := rows.Scan(
+			&e.EventID, &e.Ledger, &e.LedgerClosedAt, &e.TransactionHash, &e.TransactionIndex,
+			&e.OperationIndex, &e.EventType, &e.ContractID, &e.TopicsXDR, &e.ValueXDR,
+			&e.DecodedPayload, &e.DecodeError, &e.FirstObservedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
 // scanOrders scans every remaining row of rows into model.Order values,
 // matching the exact column order used by ListOrdersByAsset and the order
 // list/detail queries added alongside the order API.
