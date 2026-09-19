@@ -18,3 +18,13 @@ export abstract class NexusError extends Error {
 export class ConfigurationError extends NexusError {
   readonly code = "CONFIGURATION_ERROR";
 }
+
+/** Caller-supplied input (an address, amount, ledger number, etc.) failed local validation before any network call was made. */
+export class ValidationError extends NexusError {
+  readonly code = "VALIDATION_ERROR";
+}
+
+/** A Stellar RPC or Horizon request failed (network error, timeout, non-2xx response, simulation failure). */
+export class RpcError extends NexusError {
+  readonly code = "RPC_ERROR";
+}
