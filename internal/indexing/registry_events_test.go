@@ -51,12 +51,33 @@ func testU32ScVal(t *testing.T, n uint32) xdr.ScVal {
 	return v
 }
 
+// testMapScVal builds a real Map<Symbol, Val> ScVal, matching how Soroban's
+// #[contractevent] macro (data_format defaults to "map" regardless of field
+// count — confirmed against the real compiled ABI) actually encodes event
+// data fields.
+func testMapScVal(t *testing.T, fields map[string]xdr.ScVal) xdr.ScVal {
+	t.Helper()
+	entries := make(xdr.ScMap, 0, len(fields))
+	for k, v := range fields {
+		key, err := xdr.NewScVal(xdr.ScValTypeScvSymbol, xdr.ScSymbol(k))
+		if err != nil {
+			t.Fatalf("new symbol key: %v", err)
+		}
+		entries = append(entries, xdr.ScMapEntry{Key: key, Val: v})
+	}
+	v, err := xdr.NewScVal(xdr.ScValTypeScvMap, &entries)
+	if err != nil {
+		t.Fatalf("new map scval: %v", err)
+	}
+	return v
+}
+
 func TestDecodeRegistryEvent_AssetRegistered(t *testing.T) {
 	asset, assetVal := testAddressScVal(t)
 	issuer, issuerVal := testAddressScVal(t)
 
 	topics := []xdr.ScVal{testSymbolScVal(t, EventAssetRegistered), assetVal}
-	payload, err := DecodeRegistryEvent(EventAssetRegistered, topics, issuerVal)
+	payload, err := DecodeRegistryEvent(EventAssetRegistered, topics, testMapScVal(t, map[string]xdr.ScVal{"issuer": issuerVal}))
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -88,7 +109,7 @@ func TestDecodeRegistryEvent_EligibilitySet(t *testing.T) {
 	validUntil := uint32(123456)
 
 	topics := []xdr.ScVal{testSymbolScVal(t, EventEligibilitySet), assetVal, distributorVal, buyerVal}
-	payload, err := DecodeRegistryEvent(EventEligibilitySet, topics, testU32ScVal(t, validUntil))
+	payload, err := DecodeRegistryEvent(EventEligibilitySet, topics, testMapScVal(t, map[string]xdr.ScVal{"valid_until_ledger": testU32ScVal(t, validUntil)}))
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -112,14 +133,28 @@ func TestDecodeRegistryEvent_WrongTopicCountFails(t *testing.T) {
 	}
 }
 
-func TestDecodeRegistryEvent_WrongValueTypeFails(t *testing.T) {
+func TestDecodeRegistryEvent_NonMapValueFails(t *testing.T) {
 	_, assetVal := testAddressScVal(t)
 	topics := []xdr.ScVal{testSymbolScVal(t, EventAssetRegistered), assetVal}
 
-	// issuer should be an Address; give it a Symbol instead.
-	_, err := DecodeRegistryEvent(EventAssetRegistered, topics, testSymbolScVal(t, "not-an-address"))
+	// Every event's data is a Map (confirmed against the real ABI); a bare
+	// scalar value must be rejected, not silently misread as a field.
+	_, err := DecodeRegistryEvent(EventAssetRegistered, topics, testSymbolScVal(t, "not-a-map"))
 	if err == nil {
-		t.Fatal("expected a decode error for the wrong value type, got nil")
+		t.Fatal("expected a decode error for a non-Map value, got nil")
+	}
+}
+
+func TestDecodeRegistryEvent_WrongFieldTypeWithinMapFails(t *testing.T) {
+	_, assetVal := testAddressScVal(t)
+	topics := []xdr.ScVal{testSymbolScVal(t, EventAssetRegistered), assetVal}
+
+	// issuer should be an Address; give it a Symbol instead, inside an
+	// otherwise well-formed data Map.
+	badValue := testMapScVal(t, map[string]xdr.ScVal{"issuer": testSymbolScVal(t, "not-an-address")})
+	_, err := DecodeRegistryEvent(EventAssetRegistered, topics, badValue)
+	if err == nil {
+		t.Fatal("expected a decode error for the wrong field type, got nil")
 	}
 }
 

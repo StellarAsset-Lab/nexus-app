@@ -25,21 +25,17 @@ const (
 	EventAdminTransferCancelled = "admin_transfer_cancelled"
 )
 
-// dataFields extracts named non-topic ("data") fields from an event's
-// value ScVal. Soroban's #[contractevent] macro encodes zero data fields as
-// Void, exactly one as that field's value directly, and more than one as a
-// Map<Symbol, Val> keyed by field name — verified against the real
-// generated ABI for both the single-field and zero-field cases; the
-// multi-field Map case follows the same documented macro convention but,
-// lacking a real emitted multi-field event to decode (no contract is
-// deployed yet), a mismatch here surfaces as a decode error rather than a
-// silently wrong projection, per spec §16.3.
+// dataFields extracts named non-topic ("data") fields from an event's value
+// ScVal. Soroban's #[contractevent] macro defaults to data_format = "map"
+// regardless of field count — including zero and one-field events — so the
+// value is always a Map<Symbol, Val> keyed by field name. This is not
+// documentation-inferred: it was confirmed by decoding the real compiled
+// ScSpecEventV0.DataFormat for every event in both the Registry and Order
+// ABIs (all report Map), so there is no single-value or zero-field special
+// case to handle here.
 func dataFields(value xdr.ScVal, names ...string) (map[string]xdr.ScVal, error) {
-	switch len(names) {
-	case 0:
+	if len(names) == 0 {
 		return map[string]xdr.ScVal{}, nil
-	case 1:
-		return map[string]xdr.ScVal{names[0]: value}, nil
 	}
 
 	m, ok := value.GetMap()
