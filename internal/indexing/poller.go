@@ -138,7 +138,7 @@ func (p *Poller) pollOnce(ctx context.Context) (caughtUp bool, err error) {
 		return false, fmt.Errorf("get events: %w", err)
 	}
 
-	if err := persistEventBatch(ctx, p.db, p.cfg.NetworkName, resp, p.cfg.BatchLimit); err != nil {
+	if err := persistEventBatch(ctx, p.db, p.cfg.NetworkName, resp, p.cfg.BatchLimit, p.cfg.RegistryContractID); err != nil {
 		return false, fmt.Errorf("persist event batch: %w", err)
 	}
 
@@ -157,7 +157,10 @@ func (p *Poller) pollOnce(ctx context.Context) (caughtUp bool, err error) {
 // batch it describes is durably persisted, per spec §15/§16.1. Duplicate
 // events (event_id already seen) are silently no-ops, making re-processing
 // of an overlapping confirmation-lookback window idempotent.
-func persistEventBatch(ctx context.Context, conn *sql.DB, networkName string, resp protocol.GetEventsResponse, batchLimit uint) error {
+func persistEventBatch(
+	ctx context.Context, conn *sql.DB, networkName string, resp protocol.GetEventsResponse,
+	batchLimit uint, registryContractID string,
+) error {
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -165,22 +168,12 @@ func persistEventBatch(ctx context.Context, conn *sql.DB, networkName string, re
 	defer func() { _ = tx.Rollback() }()
 
 	for _, event := range resp.Events {
-		var valueXDR string
-		if event.ValueXDR != "" {
-			valueXDR = event.ValueXDR
-		}
-
 		var topicsXDR string
-		if len(event.TopicXDR) > 0 {
-			// Topics are stored as their base64 XDR values joined; the
-			// decoder (added alongside Registry/Order event indexing)
-			// re-splits and decodes each one.
-			for i, t := range event.TopicXDR {
-				if i > 0 {
-					topicsXDR += ","
-				}
-				topicsXDR += t
+		for i, t := range event.TopicXDR {
+			if i > 0 {
+				topicsXDR += ","
 			}
+			topicsXDR += t
 		}
 
 		ledgerClosedAt, err := time.Parse(time.RFC3339, event.LedgerClosedAt)
@@ -188,14 +181,34 @@ func persistEventBatch(ctx context.Context, conn *sql.DB, networkName string, re
 			ledgerClosedAt = time.Unix(0, 0).UTC()
 		}
 
+		decodedPayload, decodeErr := decodeAndProjectEvent(ctx, tx, event, registryContractID)
+
+		var pf *projectionFailure
+		if errors.As(decodeErr, &pf) {
+			return fmt.Errorf("project event %s: %w", event.ID, pf.err)
+		}
+
+		var decodedPayloadJSON, decodeErrText any
+		if decodeErr != nil {
+			decodeErrText = decodeErr.Error()
+		} else if decodedPayload != nil {
+			payloadBytes, err := marshalPayload(decodedPayload)
+			if err != nil {
+				return fmt.Errorf("marshal decoded payload for event %s: %w", event.ID, err)
+			}
+			decodedPayloadJSON = payloadBytes
+		}
+
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO stellar_events (
 				event_id, ledger, ledger_closed_at, transaction_hash, transaction_index,
-				operation_index, event_type, contract_id, topics_xdr, value_xdr
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				operation_index, event_type, contract_id, topics_xdr, value_xdr,
+				decoded_payload, decode_error
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			ON CONFLICT (event_id) DO NOTHING`,
 			event.ID, event.Ledger, ledgerClosedAt, event.TransactionHash, event.TxIndex,
-			event.OpIndex, event.EventType, event.ContractID, topicsXDR, valueXDR,
+			event.OpIndex, event.EventType, event.ContractID, topicsXDR, event.ValueXDR,
+			decodedPayloadJSON, decodeErrText,
 		)
 		if err != nil {
 			return fmt.Errorf("insert event %s: %w", event.ID, err)
