@@ -16,17 +16,42 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 )`
 
+// migrationLockKey is an arbitrary constant used as a Postgres advisory lock
+// key so concurrent Migrate() callers (multiple service replicas starting
+// at once, or — as this repository's own test suite discovered — parallel
+// `go test` processes against a fresh database) serialize instead of
+// racing on CREATE TABLE/CREATE TYPE DDL, which Postgres does not make safe
+// under full concurrency.
+const migrationLockKey = 72_727_272
+
 // Migrate applies every embedded *.sql migration that hasn't already been
 // recorded in schema_migrations, in filename order, each inside its own
 // transaction. It never partially applies a migration: a failure rolls back
 // that migration and returns immediately, leaving the schema at the last
 // successfully applied migration.
+//
+// The whole run is serialized against other concurrent Migrate() callers
+// via a session-level Postgres advisory lock, held on one dedicated
+// connection for the duration.
 func Migrate(ctx context.Context, conn *sql.DB) error {
-	if _, err := conn.ExecContext(ctx, createMigrationsTable); err != nil {
+	session, err := conn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer session.Close()
+
+	if _, err := session.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockKey); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrationLockKey)
+	}()
+
+	if _, err := session.ExecContext(ctx, createMigrationsTable); err != nil {
 		return fmt.Errorf("create schema_migrations table: %w", err)
 	}
 
-	applied, err := appliedMigrations(ctx, conn)
+	applied, err := appliedMigrations(ctx, session)
 	if err != nil {
 		return fmt.Errorf("load applied migrations: %w", err)
 	}
@@ -54,7 +79,7 @@ func Migrate(ctx context.Context, conn *sql.DB) error {
 			return fmt.Errorf("read migration %s: %w", filename, err)
 		}
 
-		if err := applyMigration(ctx, conn, filename, string(contents)); err != nil {
+		if err := applyMigration(ctx, session, filename, string(contents)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", filename, err)
 		}
 	}
@@ -62,8 +87,8 @@ func Migrate(ctx context.Context, conn *sql.DB) error {
 	return nil
 }
 
-func appliedMigrations(ctx context.Context, conn *sql.DB) (map[string]bool, error) {
-	rows, err := conn.QueryContext(ctx, "SELECT filename FROM schema_migrations")
+func appliedMigrations(ctx context.Context, session *sql.Conn) (map[string]bool, error) {
+	rows, err := session.QueryContext(ctx, "SELECT filename FROM schema_migrations")
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +105,8 @@ func appliedMigrations(ctx context.Context, conn *sql.DB) (map[string]bool, erro
 	return applied, rows.Err()
 }
 
-func applyMigration(ctx context.Context, conn *sql.DB, filename, sqlText string) error {
-	tx, err := conn.BeginTx(ctx, nil)
+func applyMigration(ctx context.Context, session *sql.Conn, filename, sqlText string) error {
+	tx, err := session.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
