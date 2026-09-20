@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.27-bookworm AS build
 WORKDIR /src
-COPY go.mod ./
-COPY services/indexer/go.mod ./services/indexer/
+COPY go.mod go.sum ./
+COPY services/indexer/go.mod services/indexer/go.sum ./services/indexer/
 COPY internal ./internal
+COPY db ./db
 COPY services/indexer ./services/indexer
 WORKDIR /src/services/indexer
 RUN go build -o /out/indexer ./cmd/indexer

@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.27-bookworm AS build
 WORKDIR /src
-COPY go.mod ./
-COPY services/api/go.mod ./services/api/
+COPY go.mod go.sum ./
+COPY services/api/go.mod services/api/go.sum ./services/api/
 COPY internal ./internal
+COPY db ./db
 COPY services/api ./services/api
 WORKDIR /src/services/api
 RUN go build -o /out/api ./cmd/api
