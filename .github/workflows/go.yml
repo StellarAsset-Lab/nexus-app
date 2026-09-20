@@ -1,0 +1,81 @@
+name: go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/**"
+      - "services/**"
+      - "db/**"
+      - "go.work"
+      - "go.work.sum"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/go.yml"
+  pull_request:
+    paths:
+      - "internal/**"
+      - "services/**"
+      - "db/**"
+      - "go.work"
+      - "go.work.sum"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/go.yml"
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+
+    # A real Postgres, not a mock — every integration test in this
+    # repository is written to run against one (see docs/testing.md).
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/nexus?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.1"
+
+      - name: Apply migrations
+        run: go run ./services/api/cmd/api -migrate
+
+      - name: Vet
+        run: |
+          go vet ./...
+          for service in services/api services/indexer services/worker; do
+            (cd "$service" && go vet ./...)
+          done
+
+      # `go test ./...` at the repo root covers internal/* (db, httpapi,
+      # indexing, reconcile) — the per-service loop only covers each
+      # service's own cmd/ package, which has no tests of its own.
+      - name: Test
+        run: |
+          go test ./... -count=1
+          for service in services/api services/indexer services/worker; do
+            (cd "$service" && go test ./... -count=1)
+          done
+
+      - name: Build
+        run: |
+          go build ./...
+          for service in services/api services/indexer services/worker; do
+            (cd "$service" && go build ./...)
+          done
