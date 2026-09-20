@@ -1,0 +1,56 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/web.yml"
+
+# NEXT_PUBLIC_* values here are the same real, public Testnet config
+# committed in .env.example — never a secret. NEXT_PUBLIC_API_BASE_URL is
+# only used for URL-shape validation at build time; no request is actually
+# made to it during `next build`.
+env:
+  NEXT_PUBLIC_APP_NAME: Nexus
+  NEXT_PUBLIC_NETWORK: testnet
+  NEXT_PUBLIC_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+  NEXT_PUBLIC_SOROBAN_RPC_URL: https://soroban-testnet.stellar.org
+  NEXT_PUBLIC_HORIZON_URL: https://horizon-testnet.stellar.org
+  NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.21.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
