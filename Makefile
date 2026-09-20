@@ -26,18 +26,24 @@ db-migrate:
 
 build:
 	pnpm build
+	go build ./...
 	for service in services/api services/indexer services/worker; do \
 		(cd $$service && go build ./...) || exit 1; \
 	done
 
+# `go test ./...` at the repo root covers internal/* (db, httpapi, indexing,
+# reconcile) — the per-service loop below only covers each service's own
+# cmd/ package, which has no tests of its own. Both are needed.
 test:
 	pnpm test
+	go test ./...
 	for service in services/api services/indexer services/worker; do \
 		(cd $$service && go test ./...) || exit 1; \
 	done
 
 lint:
 	pnpm lint
+	go vet ./...
 	for service in services/api services/indexer services/worker; do \
 		(cd $$service && go vet ./...) || exit 1; \
 	done
